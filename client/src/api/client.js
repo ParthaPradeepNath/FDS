@@ -24,3 +24,8 @@ api.interceptors.response.use(
 )
 
 export default api
+
+export const analyzeFeedback = (id) => api.post(`/feedback/${id}/analyze`)
+
+export const analyzeAllFeedback = (force = false) =>
+  api.post('/feedback/analyze', null, { params: force ? { force: 'true' } : undefined })

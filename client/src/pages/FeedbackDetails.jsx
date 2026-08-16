@@ -6,6 +6,7 @@ import RatingStars from '../components/RatingStars'
 import StatusBadge from '../components/StatusBadge'
 import ConfirmDialog from '../components/ConfirmDialog'
 import { useAuth } from '../context/useAuth.js'
+import AiInsightsCard from '../components/AiInsightsCard'
 import { Button, buttonVariants } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -165,6 +166,12 @@ export default function FeedbackDetails() {
             </h3>
             <p className="text-[15px] leading-relaxed whitespace-pre-wrap">{feedback.comment}</p>
           </div>
+
+          <AiInsightsCard
+            feedback={feedback}
+            canAnalyze={isAdmin || canEdit}
+            onAnalyzed={setFeedback}
+          />
 
           {feedback.suggestion && (
             <div className="flex flex-col gap-2">

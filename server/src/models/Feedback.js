@@ -37,6 +37,23 @@ const feedbackSchema = new mongoose.Schema(
       enum: ['new', 'reviewed', 'resolved'],
       default: 'new',
     },
+    aiSentiment: {
+      type: String,
+      enum: ['positive', 'negative', 'neutral'],
+      default: null,
+    },
+    aiTopics: {
+      type: [String],
+      default: [],
+    },
+    aiSummary: {
+      type: String,
+      default: '',
+    },
+    aiUpdatedAt: {
+      type: Date,
+      default: null,
+    },
   },
   {
     timestamps: true,

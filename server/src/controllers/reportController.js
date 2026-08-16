@@ -6,37 +6,48 @@ const serializeDate = (rows) => rows.map((row) => ({ _id: row._id, count: row.co
 
 export const getOverview = async (req, res, next) => {
   try {
-    const [total, avgResult, byRating, byStatus, byCategory, byDay, recent] = await Promise.all([
-      Feedback.countDocuments(),
-      Feedback.aggregate([
-        { $group: { _id: null, avg: { $avg: '$rating' }, count: { $sum: 1 } } },
-      ]),
-      Feedback.aggregate([
-        { $group: { _id: '$rating', count: { $sum: 1 } } },
-        { $sort: { _id: 1 } },
-      ]),
-      Feedback.aggregate([{ $group: { _id: '$status', count: { $sum: 1 } } }]),
-      Feedback.aggregate([
-        { $group: { _id: '$categoryId', count: { $sum: 1 } } },
-        { $sort: { count: -1 } },
-      ]),
-      Feedback.aggregate([
-        {
-          $group: {
-            _id: { $dateToString: { format: '%Y-%m-%d', date: '$createdAt' } },
-            count: { $sum: 1 },
-          },
-        },
-        { $sort: { _id: 1 } },
-      ]),
-      Feedback.find()
-        .sort({ createdAt: -1 })
-        .limit(8)
-        .populate([
-          { path: 'userId', select: 'name email' },
-          { path: 'categoryId', select: 'name' },
+    const [total, avgResult, byRating, byStatus, byCategory, byDay, recent, bySentiment, topTopics] =
+      await Promise.all([
+        Feedback.countDocuments(),
+        Feedback.aggregate([
+          { $group: { _id: null, avg: { $avg: '$rating' }, count: { $sum: 1 } } },
         ]),
-    ])
+        Feedback.aggregate([
+          { $group: { _id: '$rating', count: { $sum: 1 } } },
+          { $sort: { _id: 1 } },
+        ]),
+        Feedback.aggregate([{ $group: { _id: '$status', count: { $sum: 1 } } }]),
+        Feedback.aggregate([
+          { $group: { _id: '$categoryId', count: { $sum: 1 } } },
+          { $sort: { count: -1 } },
+        ]),
+        Feedback.aggregate([
+          {
+            $group: {
+              _id: { $dateToString: { format: '%Y-%m-%d', date: '$createdAt' } },
+              count: { $sum: 1 },
+            },
+          },
+          { $sort: { _id: 1 } },
+        ]),
+        Feedback.find()
+          .sort({ createdAt: -1 })
+          .limit(8)
+          .populate([
+            { path: 'userId', select: 'name email' },
+            { path: 'categoryId', select: 'name' },
+          ]),
+        Feedback.aggregate([
+          { $match: { aiSentiment: { $in: ['positive', 'negative', 'neutral'] } } },
+          { $group: { _id: '$aiSentiment', count: { $sum: 1 } } },
+        ]),
+        Feedback.aggregate([
+          { $unwind: { path: '$aiTopics', preserveNullAndEmptyArrays: false } },
+          { $group: { _id: '$aiTopics', count: { $sum: 1 } } },
+          { $sort: { count: -1 } },
+          { $limit: 8 },
+        ]),
+      ])
 
     const categories = await Category.find({ isActive: true }).lean()
 
@@ -53,6 +64,7 @@ export const getOverview = async (req, res, next) => {
     }))
 
     const statusMap = Object.fromEntries(byStatus.map((s) => [String(s._id), s.count]))
+    const sentimentMap = Object.fromEntries(bySentiment.map((s) => [String(s._id), s.count]))
 
     res.json({
       total,
@@ -66,6 +78,14 @@ export const getOverview = async (req, res, next) => {
       byCategory: byCategoryLabeled,
       byDay: serializeDate(byDay),
       recent,
+      analyzed:
+        (sentimentMap.positive || 0) + (sentimentMap.negative || 0) + (sentimentMap.neutral || 0),
+      sentimentCounts: {
+        positive: sentimentMap.positive || 0,
+        negative: sentimentMap.negative || 0,
+        neutral: sentimentMap.neutral || 0,
+      },
+      topTopics: topTopics.map((t) => ({ topic: t._id, count: t.count })),
     })
   } catch (error) {
     next(error)
@@ -91,7 +111,7 @@ export const getReports = async (req, res, next) => {
       }
     }
 
-    const [byRating, byCategory, byDay] = await Promise.all([
+    const [byRating, byCategory, byDay, bySentiment, topTopics] = await Promise.all([
       Feedback.aggregate([
         { $match: filter },
         { $group: { _id: '$rating', count: { $sum: 1 }, avgCommentLen: { $avg: { $strLenCP: '$comment' } } } },
@@ -112,6 +132,17 @@ export const getReports = async (req, res, next) => {
           },
         },
         { $sort: { _id: 1 } },
+      ]),
+      Feedback.aggregate([
+        { $match: { ...filter, aiSentiment: { $in: ['positive', 'negative', 'neutral'] } } },
+        { $group: { _id: '$aiSentiment', count: { $sum: 1 } } },
+      ]),
+      Feedback.aggregate([
+        { $match: filter },
+        { $unwind: { path: '$aiTopics', preserveNullAndEmptyArrays: false } },
+        { $group: { _id: '$aiTopics', count: { $sum: 1 } } },
+        { $sort: { count: -1 } },
+        { $limit: 8 },
       ]),
     ])
 
@@ -135,12 +166,21 @@ export const getReports = async (req, res, next) => {
     }))
 
     const lowRated = byCategoryLabeled.filter((c) => c.averageRating <= 2.5)
+    const sentimentMap = Object.fromEntries(bySentiment.map((s) => [String(s._id), s.count]))
 
     res.json({
       ratingDistribution,
       byCategory: byCategoryLabeled,
       byDay: serializeDate(byDay),
       lowRated,
+      analyzed:
+        (sentimentMap.positive || 0) + (sentimentMap.negative || 0) + (sentimentMap.neutral || 0),
+      sentimentCounts: {
+        positive: sentimentMap.positive || 0,
+        negative: sentimentMap.negative || 0,
+        neutral: sentimentMap.neutral || 0,
+      },
+      topTopics: topTopics.map((t) => ({ topic: t._id, count: t.count })),
     })
   } catch (error) {
     next(error)

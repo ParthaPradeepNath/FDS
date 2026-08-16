@@ -49,7 +49,7 @@ app.use((err, req, res, next) => {
     message = 'Duplicate value error'
   }
 
-  console.error(`[${new Date().toISOString()}] ${err.stack || err}`)
+  console.error(`[${new Date().toISOString()}] ${err.detail || err.stack || err}`)
   res.status(status).json({ message })
 })
 

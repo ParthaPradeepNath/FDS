@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
-import { Bar, Line } from 'react-chartjs-2'
+import { Bar, Doughnut, Line } from 'react-chartjs-2'
+import { toast } from 'sonner'
 import '@/lib/chart'
-import api from '../api/client'
+import api, { analyzeAllFeedback } from '../api/client'
 import DatePicker from '@/components/DatePicker'
 import { Button } from '@/components/ui/button'
 import { Button as StatefulButton } from '@/components/ui/stateful-button'
@@ -15,7 +16,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
-import { AlertCircle, BarChart3, RotateCcw } from 'lucide-react'
+import { AlertCircle, BarChart3, LoaderCircle, RotateCcw, Sparkles } from 'lucide-react'
 
 const PALETTE = ['#4f46e5', '#06b6d4', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899']
 
@@ -27,6 +28,8 @@ export default function Reports() {
   const [filters, setFilters] = useState({ ...INITIAL_FILTERS })
   const [data, setData] = useState(null)
   const [error, setError] = useState('')
+  const [analyzing, setAnalyzing] = useState(false)
+  const [reload, setReload] = useState(0)
 
   const loading = data === null && !error
 
@@ -61,11 +64,32 @@ export default function Reports() {
     return () => {
       active = false
     }
-  }, [filters])
+  }, [filters, reload])
 
   const beginRefetch = () => {
     setError('')
     setData(null)
+  }
+
+  const handleAnalyzeAll = async () => {
+    setAnalyzing(true)
+    try {
+      const { data } = await analyzeAllFeedback()
+      if (data.failed > 0) {
+        toast.error(
+          `${data.message || 'AI analysis is temporarily unavailable.'} ${data.analyzed} of ${data.total} analyzed.`,
+        )
+      } else if (data.analyzed === 0) {
+        toast.error('No new feedback to analyze')
+      } else {
+        toast.success(`Analyzed ${data.analyzed} item${data.analyzed === 1 ? '' : 's'}`)
+      }
+      setReload((n) => n + 1)
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Failed to run AI analysis')
+    } finally {
+      setAnalyzing(false)
+    }
   }
 
   const handleApply = (e) => {
@@ -148,13 +172,47 @@ export default function Reports() {
     ],
   }
 
+  const sentimentChart = {
+    labels: ['Positive', 'Negative', 'Neutral'],
+    datasets: [
+      {
+        data: [
+          data?.sentimentCounts.positive,
+          data?.sentimentCounts.negative,
+          data?.sentimentCounts.neutral,
+        ],
+        backgroundColor: ['#10b981', '#ef4444', '#64748b'],
+        borderWidth: 0,
+      },
+    ],
+  }
+
+  const topicMax = Math.max(...(data?.topTopics.map((t) => t.count) || [1]))
+
   return (
     <div>
-      <div className="mb-6">
-        <h1 className="text-2xl font-semibold tracking-tight">Reports</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Analyze satisfaction trends, ratings, and categories.
-        </p>
+      <div className="mb-6 flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight">Reports</h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Analyze satisfaction trends, ratings, and categories.
+          </p>
+        </div>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          disabled={analyzing}
+          onClick={handleAnalyzeAll}
+          className="gap-1.5"
+        >
+          {analyzing ? (
+            <LoaderCircle className="animate-spin" />
+          ) : (
+            <Sparkles className="size-3.5 text-primary" />
+          )}
+          {analyzing ? 'Analyzing…' : 'Run AI analysis'}
+        </Button>
       </div>
 
       <form onSubmit={handleApply} className="mb-6">
@@ -313,6 +371,87 @@ export default function Reports() {
               </div>
             </CardContent>
           </Card>
+
+          <div className="mb-6 grid grid-cols-1 gap-4 lg:grid-cols-2">
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">Sentiment distribution</CardTitle>
+                <CardDescription>How analyzed feedback splits by tone.</CardDescription>
+              </CardHeader>
+              <CardContent>
+                {data.analyzed === 0 ? (
+                  <div className="flex flex-col items-center gap-3 px-4 py-14 text-center">
+                    <span className="inline-grid size-12 place-items-center rounded-full bg-muted text-muted-foreground">
+                      <Sparkles className="size-6" />
+                    </span>
+                    <p className="text-sm text-muted-foreground">
+                      Run AI analysis to see the sentiment breakdown.
+                    </p>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      disabled={analyzing}
+                      onClick={handleAnalyzeAll}
+                      className="gap-1.5"
+                    >
+                      {analyzing ? (
+                        <LoaderCircle className="animate-spin" />
+                      ) : (
+                        <Sparkles className="size-3.5 text-primary" />
+                      )}
+                      Run AI analysis
+                    </Button>
+                  </div>
+                ) : (
+                  <div className="relative h-64">
+                    <Doughnut
+                      data={sentimentChart}
+                      options={{
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        cutout: '62%',
+                        plugins: {
+                          legend: { position: 'bottom' },
+                          tooltip: { callbacks: { label: (ctx) => ` ${ctx.label}: ${ctx.raw}` } },
+                        },
+                      }}
+                    />
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">Top topics</CardTitle>
+                <CardDescription>Most mentioned topics across analyzed feedback.</CardDescription>
+              </CardHeader>
+              <CardContent className="flex flex-col gap-3">
+                {data.topTopics.length === 0 ? (
+                  <p className="py-2 text-sm text-muted-foreground">
+                    No topics detected yet. Run AI analysis to surface topics.
+                  </p>
+                ) : (
+                  data.topTopics.map((t) => (
+                    <div
+                      key={t.topic}
+                      className="grid grid-cols-[110px_1fr_40px] items-center gap-3 text-sm"
+                    >
+                      <span className="truncate font-medium capitalize">{t.topic}</span>
+                      <div className="h-2 overflow-hidden rounded-full bg-muted">
+                        <div
+                          className="h-full rounded-full bg-gradient-to-r from-primary to-lime-700"
+                          style={{ width: `${Math.max((t.count / topicMax) * 100, 8)}%` }}
+                        />
+                      </div>
+                      <span className="text-right text-muted-foreground">{t.count}</span>
+                    </div>
+                  ))
+                )}
+              </CardContent>
+            </Card>
+          </div>
 
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
             <Card>

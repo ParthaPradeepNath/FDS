@@ -1,10 +1,34 @@
 import Feedback from '../models/Feedback.js'
 import Category from '../models/Category.js'
+import { analyzeFeedback, isAiConfigured } from '../services/ai.js'
 
 const populateOptions = [
   { path: 'userId', select: 'name email role' },
   { path: 'categoryId', select: 'name' },
 ]
+
+const persistAiAnalysis = async (feedbackId, ai) => {
+  await Feedback.updateOne(
+    { _id: feedbackId },
+    {
+      $set: {
+        aiSentiment: ai.sentiment,
+        aiTopics: ai.topics,
+        aiSummary: ai.summary,
+        aiUpdatedAt: new Date(),
+      },
+    },
+  )
+}
+
+const enrich = async (feedbackId, { comment, rating, suggestion }) => {
+  try {
+    const ai = await analyzeFeedback({ comment, rating, suggestion })
+    await persistAiAnalysis(feedbackId, ai)
+  } catch (error) {
+    console.error(`[ai] enrichment failed for ${feedbackId}: ${error.detail || error.message}`)
+  }
+}
 
 export const createFeedback = async (req, res, next) => {
   try {
@@ -37,6 +61,7 @@ export const createFeedback = async (req, res, next) => {
     })
 
     await feedback.populate(populateOptions)
+    enrich(feedback._id, { comment, rating, suggestion })
     res.status(201).json({ feedback })
   } catch (error) {
     next(error)
@@ -203,6 +228,98 @@ export const deleteFeedback = async (req, res, next) => {
     if (error.name === 'CastError') {
       return res.status(404).json({ message: 'Feedback not found' })
     }
+    next(error)
+  }
+}
+
+export const analyzeFeedbackById = async (req, res, next) => {
+  try {
+    if (!isAiConfigured()) {
+      return res.status(400).json({
+        message:
+          'No AI provider configured. Set an API key in server/.env (AI_API_KEY, OPENAI_API_KEY, ANTHROPIC_API_KEY, or GEMINI_API_KEY).',
+      })
+    }
+    const feedback = await Feedback.findById(req.params.id)
+    if (!feedback) return res.status(404).json({ message: 'Feedback not found' })
+
+    const isAdmin = req.user.role === 'admin'
+    if (!isAdmin && !feedback.userId.equals(req.user._id)) {
+      return res.status(403).json({ message: 'You do not have permission to analyze this feedback' })
+    }
+
+    let ai
+    try {
+      ai = await analyzeFeedback({
+        comment: feedback.comment,
+        rating: feedback.rating,
+        suggestion: feedback.suggestion,
+      })
+    } catch (error) {
+      console.error(`[ai] analyze failed for ${feedback._id}: ${error.detail || error.message}`)
+      return res
+        .status(502)
+        .json({ message: 'AI analysis is temporarily unavailable. Please try again in a few minutes.' })
+    }
+    await persistAiAnalysis(feedback._id, ai)
+
+    const updated = await Feedback.findById(feedback._id).populate(populateOptions)
+    res.json({ feedback: updated })
+  } catch (error) {
+    if (error.name === 'CastError') {
+      return res.status(404).json({ message: 'Feedback not found' })
+    }
+    next(error)
+  }
+}
+
+export const analyzeFeedbackBatch = async (req, res, next) => {
+  try {
+    if (!isAiConfigured()) {
+      return res.status(400).json({
+        message:
+          'No AI provider configured. Set an API key in server/.env (AI_API_KEY, OPENAI_API_KEY, ANTHROPIC_API_KEY, or GEMINI_API_KEY).',
+      })
+    }
+    const force = req.query.force === 'true'
+
+    const filter = force ? {} : { $or: [{ aiUpdatedAt: null }, { aiUpdatedAt: { $exists: false } }] }
+    const items = await Feedback.find(filter)
+      .select('_id comment rating suggestion')
+      .lean()
+
+    const analyzed = []
+    const failed = []
+    let cursor = 0
+    const workers = Array.from({ length: 2 }, async () => {
+      while (cursor < items.length) {
+        const item = items[cursor++]
+        try {
+          const ai = await analyzeFeedback({
+            comment: item.comment,
+            rating: item.rating,
+            suggestion: item.suggestion,
+          })
+          await persistAiAnalysis(item._id, ai)
+          analyzed.push(item._id)
+        } catch (error) {
+          failed.push(item._id)
+          console.error(`[ai] batch analyze failed for ${item._id}: ${error.detail || error.message}`)
+        }
+      }
+    })
+    await Promise.all(workers)
+
+    res.json({
+      analyzed: analyzed.length,
+      failed: failed.length,
+      total: items.length,
+      message:
+        failed.length > 0
+          ? 'AI analysis is temporarily unavailable. Please try again in a few minutes.'
+          : undefined,
+    })
+  } catch (error) {
     next(error)
   }
 }

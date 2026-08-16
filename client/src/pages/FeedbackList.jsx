@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import api from '../api/client'
 import RatingStars from '../components/RatingStars'
 import StatusBadge from '../components/StatusBadge'
+import SentimentBadge from '../components/SentimentBadge'
 import { buttonVariants } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -273,6 +274,7 @@ export default function FeedbackList() {
                   <TableHead>Category</TableHead>
                   <TableHead>Rating</TableHead>
                   <TableHead>Status</TableHead>
+                  <TableHead>Sentiment</TableHead>
                   <TableHead>Submitted</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
@@ -294,6 +296,9 @@ export default function FeedbackList() {
                     </TableCell>
                     <TableCell>
                       <StatusBadge status={item.status} />
+                    </TableCell>
+                    <TableCell>
+                      <SentimentBadge sentiment={item.aiSentiment} />
                     </TableCell>
                     <TableCell className="text-muted-foreground">
                       {new Date(item.createdAt).toLocaleDateString('en-US', {
