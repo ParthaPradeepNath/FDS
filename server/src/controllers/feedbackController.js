@@ -232,6 +232,28 @@ export const deleteFeedback = async (req, res, next) => {
   }
 }
 
+export const bulkUpdateFeedback = async (req, res, next) => {
+  try {
+    const { ids, status } = req.body
+
+    if (!Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({ message: 'No feedback selected' })
+    }
+    if (!['new', 'reviewed', 'resolved'].includes(status)) {
+      return res.status(400).json({ message: 'Invalid status value' })
+    }
+
+    const result = await Feedback.updateMany(
+      { _id: { $in: ids } },
+      { $set: { status } },
+    )
+
+    res.json({ updated: result.modifiedCount })
+  } catch (error) {
+    next(error)
+  }
+}
+
 export const analyzeFeedbackById = async (req, res, next) => {
   try {
     if (!isAiConfigured()) {

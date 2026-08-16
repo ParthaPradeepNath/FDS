@@ -2,6 +2,7 @@ import { Star } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 const SIZES = {
+  xs: 'size-3.5',
   sm: 'size-4',
   md: 'size-5',
   lg: 'size-7',
@@ -21,7 +22,7 @@ export default function RatingStars({ value, onChange, readOnly = false, size = 
           <Star
             className={cn(
               SIZES[size],
-              filled ? 'fill-amber-400 text-amber-400' : 'text-muted-foreground/40',
+              filled ? 'fill-amber-400 text-amber-400' : 'text-muted-foreground/30',
             )}
           />
         )

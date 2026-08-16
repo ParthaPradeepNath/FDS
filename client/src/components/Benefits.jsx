@@ -81,7 +81,7 @@ export default function Benefits() {
           viewport={{ once: true, margin: '-80px' }}
           className="flex flex-col gap-3"
         >
-          <Accordion multiple defaultValue={['benefit-0']} className="flex w-full flex-col gap-2">
+          <Accordion className="flex w-full flex-col gap-2">
             {BENEFITS.map((benefit, i) => {
               const Icon = benefit.icon
               return (

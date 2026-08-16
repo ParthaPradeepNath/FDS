@@ -1,10 +1,12 @@
-import { useEffect, useState, useDeferredValue } from 'react'
+import { useEffect, useMemo, useRef, useState, useDeferredValue } from 'react'
 import { Link } from 'react-router-dom'
-import api from '../api/client'
+import { toast } from 'sonner'
+import api, { bulkUpdateFeedbackStatus } from '../api/client'
 import RatingStars from '../components/RatingStars'
 import StatusBadge from '../components/StatusBadge'
 import SentimentBadge from '../components/SentimentBadge'
-import { buttonVariants } from '@/components/ui/button'
+import { Button, buttonVariants } from '@/components/ui/button'
+import { Badge } from '@/components/ui/badge'
 import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import {
@@ -23,7 +25,19 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { Skeleton } from '@/components/ui/skeleton'
-import { AlertCircle, Search, SearchX } from 'lucide-react'
+import {
+  AlertCircle,
+  ArrowDown,
+  ArrowUp,
+  ArrowUpDown,
+  ArrowUpRight,
+  Check,
+  CheckCircle2,
+  Eye,
+  Search,
+  SearchX,
+  X,
+} from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { STATUS_OPTIONS } from '@/lib/constants'
 
@@ -33,12 +47,47 @@ const ALL_OPTIONS = {
   rating: 'any-rating',
 }
 
-const SORT_ITEMS = [
-  { value: 'newest', label: 'Newest first' },
-  { value: 'oldest', label: 'Oldest first' },
-  { value: 'rating-desc', label: 'Highest rating' },
-  { value: 'rating-asc', label: 'Lowest rating' },
-]
+const formatDate = (iso) =>
+  new Date(iso).toLocaleDateString('en-US', {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+  })
+
+function SortableHeader({ column, label, active, direction, onSort, className }) {
+  const Icon = active ? (direction === 'asc' ? ArrowUp : ArrowDown) : ArrowUpDown
+  return (
+    <th
+      scope="col"
+      aria-sort={
+        active ? (direction === 'asc' ? 'ascending' : 'descending') : undefined
+      }
+      className={cn(
+        'h-12 px-3 text-left font-medium whitespace-nowrap text-foreground/80',
+        className,
+      )}
+    >
+      <button
+        type="button"
+        onClick={() => onSort(column)}
+        aria-label={`Sort by ${label}${
+          active ? `, currently ${direction === 'asc' ? 'ascending' : 'descending'}` : ''
+        }`}
+        className="group inline-flex items-center gap-1 rounded-sm text-[13px] font-medium text-inherit transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+      >
+        {label}
+        <Icon
+          className={cn(
+            'size-3.5 transition-colors',
+            active
+              ? 'text-foreground'
+              : 'text-muted-foreground/40 group-hover:text-muted-foreground',
+          )}
+        />
+      </button>
+    </th>
+  )
+}
 
 export default function FeedbackList() {
   const [feedback, setFeedback] = useState(null)
@@ -50,7 +99,15 @@ export default function FeedbackList() {
   const [category, setCategory] = useState('')
   const [status, setStatus] = useState('')
   const [minRating, setMinRating] = useState('')
-  const [sort, setSort] = useState('newest')
+
+  const [sortKey, setSortKey] = useState('createdAt')
+  const [sortDir, setSortDir] = useState('desc')
+
+  const [selected, setSelected] = useState([])
+  const [busy, setBusy] = useState(false)
+  const [reload, setReload] = useState(0)
+
+  const selectAllRef = useRef(null)
 
   const loading = feedback === null && !error
 
@@ -74,7 +131,7 @@ export default function FeedbackList() {
       category: category || undefined,
       status: status || undefined,
       minRating: minRating || undefined,
-      sort: sort || undefined,
+      sort: 'newest',
     }
     api
       .get('/feedback', { params })
@@ -87,11 +144,33 @@ export default function FeedbackList() {
     return () => {
       active = false
     }
-  }, [deferredSearch, category, status, minRating, sort])
+  }, [deferredSearch, category, status, minRating, reload])
+
+  const sorted = useMemo(() => {
+    const arr = [...(feedback || [])]
+    arr.sort((a, b) => {
+      const av = sortKey === 'rating' ? a.rating : new Date(a.createdAt).getTime()
+      const bv = sortKey === 'rating' ? b.rating : new Date(b.createdAt).getTime()
+      return sortDir === 'asc' ? av - bv : bv - av
+    })
+    return arr
+  }, [feedback, sortKey, sortDir])
+
+  const sortedIds = sorted.map((item) => item._id)
+  const allSelected = sorted.length > 0 && sorted.every((item) => selected.includes(item._id))
+  const someSelected = sorted.some((item) => selected.includes(item._id))
+
+  useEffect(() => {
+    if (selectAllRef.current) {
+      selectAllRef.current.indeterminate = someSelected && !allSelected
+    }
+  }, [someSelected, allSelected])
 
   const beginRefetch = () => {
     setError('')
     setFeedback(null)
+    setSelected([])
+    setReload((r) => r + 1)
   }
 
   const handleReset = () => {
@@ -100,7 +179,50 @@ export default function FeedbackList() {
     setCategory('')
     setStatus('')
     setMinRating('')
-    setSort('newest')
+    setSortKey('createdAt')
+    setSortDir('desc')
+    setSelected([])
+  }
+
+  const handleSort = (column) => {
+    if (sortKey === column) {
+      setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'))
+    } else {
+      setSortKey(column)
+      setSortDir('desc')
+    }
+  }
+
+  const toggleSelected = (id) => {
+    setSelected((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
+    )
+  }
+
+  const toggleSelectAll = () => {
+    if (allSelected) {
+      setSelected((prev) => prev.filter((id) => !sortedIds.includes(id)))
+    } else {
+      setSelected((prev) => [...new Set([...prev, ...sortedIds])])
+    }
+  }
+
+  const markStatus = async (nextStatus) => {
+    setBusy(true)
+    try {
+      const { data } = await bulkUpdateFeedbackStatus(selected, nextStatus)
+      toast.success(
+        `Marked ${data.updated} item${data.updated === 1 ? '' : 's'} as ${
+          nextStatus === 'reviewed' ? 'reviewed' : 'resolved'
+        }`,
+      )
+      setSelected([])
+      beginRefetch()
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Could not update feedback')
+    } finally {
+      setBusy(false)
+    }
   }
 
   const hasFilters = search || category || status || minRating
@@ -137,7 +259,7 @@ export default function FeedbackList() {
         </div>
       )}
 
-      <Card className="mb-6">
+      <Card className="mb-6 shadow-sm">
         <CardContent className="flex flex-wrap items-center gap-2.5 p-4">
           <div className="relative min-w-52 flex-1">
             <Search className="absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
@@ -213,26 +335,10 @@ export default function FeedbackList() {
             </SelectContent>
           </Select>
 
-          <Select items={SORT_ITEMS} value={sort} onValueChange={(v) => {
-            beginRefetch()
-            setSort(v)
-          }}>
-            <SelectTrigger className="w-36 bg-background">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {SORT_ITEMS.map((item) => (
-                <SelectItem key={item.value} value={item.value}>
-                  {item.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-
           {hasFilters && (
             <button
               type="button"
-              className="text-sm font-medium text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
+              className="text-sm font-medium text-foreground/80 underline-offset-4 hover:text-foreground hover:underline"
               onClick={handleReset}
             >
               Clear filters
@@ -242,17 +348,25 @@ export default function FeedbackList() {
       </Card>
 
       {loading ? (
-        <Card>
-          <CardContent className="p-4">
-            <div className="flex flex-col gap-3">
-              {[0, 1, 2, 3].map((i) => (
-                <Skeleton key={i} className="h-10 w-full" />
+        <Card className="shadow-sm">
+          <CardContent className="p-0">
+            <div className="flex flex-col">
+              {[0, 1, 2, 3, 4].map((i) => (
+                <div
+                  key={i}
+                  className="flex items-center gap-4 border-b border-border/60 px-4 py-4 last:border-0"
+                >
+                  <Skeleton className="size-4 rounded-sm" />
+                  <Skeleton className="h-4 flex-1" />
+                  <Skeleton className="hidden h-4 w-16 sm:block" />
+                  <Skeleton className="h-4 w-12" />
+                </div>
               ))}
             </div>
           </CardContent>
         </Card>
-      ) : feedback.length === 0 ? (
-        <div className="flex flex-col items-center gap-3 rounded-xl border border-dashed bg-card px-6 py-16 text-center">
+      ) : sorted.length === 0 ? (
+        <div className="flex flex-col items-center gap-3 rounded-xl border border-dashed bg-card px-6 py-16 text-center shadow-sm">
           <span className="inline-grid size-14 place-items-center rounded-full bg-muted text-muted-foreground">
             <SearchX className="size-7" />
           </span>
@@ -262,63 +376,182 @@ export default function FeedbackList() {
           <p className="text-sm text-muted-foreground">
             {hasFilters ? 'Try adjusting your search or filters.' : 'Submissions will appear here.'}
           </p>
+          {hasFilters && (
+            <Button variant="outline" size="sm" className="mt-1" onClick={handleReset}>
+              Clear filters
+            </Button>
+          )}
         </div>
       ) : (
-        <Card className="overflow-hidden">
-          <CardContent className="overflow-x-auto p-0">
-            <Table>
+        <Card className="shadow-sm">
+          <CardContent className="p-0">
+            {selected.length > 0 && (
+              <div
+                data-bulk-bar
+                className="flex flex-wrap items-center gap-2 border-b border-border bg-muted/50 px-4 py-2"
+              >
+                <span className="mr-1 text-sm font-medium">
+                  {selected.length} selected
+                </span>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={busy}
+                  onClick={() => markStatus('reviewed')}
+                >
+                  <Check className="size-3.5" />
+                  Mark reviewed
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={busy}
+                  onClick={() => markStatus('resolved')}
+                >
+                  <CheckCircle2 className="size-3.5" />
+                  Mark resolved
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  disabled={busy}
+                  onClick={() => setSelected([])}
+                >
+                  <X className="size-3.5" />
+                  Clear
+                </Button>
+              </div>
+            )}
+
+            <div className="px-4 py-2">
+              <Table containerClassName="overflow-visible" className="table-fixed">
+              <colgroup>
+                <col className="w-11" />
+                <col className="w-[35%]" />
+                <col className="hidden w-[12%] md:table-column" />
+                <col className="hidden w-[10%] md:table-column" />
+                <col className="w-[11%]" />
+                <col className="w-[10%]" />
+                <col className="hidden w-[10%] lg:table-column" />
+                <col className="hidden w-[12%] sm:table-column" />
+                <col className="w-20" />
+              </colgroup>
               <TableHeader>
-                <TableRow className="bg-muted/40 hover:bg-muted/40">
-                  <TableHead>Comment</TableHead>
-                  <TableHead>User</TableHead>
-                  <TableHead>Category</TableHead>
-                  <TableHead>Rating</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Sentiment</TableHead>
-                  <TableHead>Submitted</TableHead>
-                  <TableHead className="text-right">Actions</TableHead>
+                <TableRow className="bg-muted">
+                  <TableHead className="h-12 w-11 pl-4 pr-0">
+                    <input
+                      ref={selectAllRef}
+                      type="checkbox"
+                      checked={allSelected}
+                      disabled={busy}
+                      onChange={toggleSelectAll}
+                      aria-label="Select all rows"
+                      className="size-4 cursor-pointer rounded border-border accent-primary focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background focus-visible:outline-none"
+                    />
+                  </TableHead>
+                  <TableHead scope="col" className="h-12 px-3 text-[13px] font-medium text-foreground/80">
+                    Comment
+                  </TableHead>
+                  <TableHead scope="col" className="hidden h-12 px-3 text-[13px] font-medium text-foreground/80 md:table-cell">
+                    User
+                  </TableHead>
+                  <TableHead scope="col" className="hidden h-12 px-3 text-[13px] font-medium text-foreground/80 md:table-cell">
+                    Category
+                  </TableHead>
+                  <SortableHeader column="rating" label="Rating" active={sortKey === 'rating'} direction={sortDir} onSort={handleSort} />
+                  <TableHead scope="col" className="h-12 px-3 text-[13px] font-medium text-foreground/80">
+                    Status
+                  </TableHead>
+                  <TableHead scope="col" className="hidden h-12 px-3 text-[13px] font-medium text-foreground/80 lg:table-cell">
+                    Sentiment
+                  </TableHead>
+                  <SortableHeader
+                    column="createdAt"
+                    label="Submitted"
+                    active={sortKey === 'createdAt'}
+                    direction={sortDir}
+                    onSort={handleSort}
+                    className="hidden sm:table-cell"
+                  />
+                  <TableHead scope="col" className="h-12 px-3 text-right text-[13px] font-medium text-foreground/80">
+                    Actions
+                  </TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {feedback.map((item) => (
-                  <TableRow key={item._id}>
-                    <TableCell className="max-w-80">
-                      <span className="block truncate">{item.comment}</span>
-                    </TableCell>
-                    <TableCell>{item.userId?.name || 'Unknown'}</TableCell>
-                    <TableCell>
-                      <span className="rounded-full bg-primary/10 px-2 py-0.5 text-xs font-semibold text-primary">
-                        {item.categoryId?.name || 'General'}
-                      </span>
-                    </TableCell>
-                    <TableCell>
-                      <RatingStars value={item.rating} readOnly size="sm" />
-                    </TableCell>
-                    <TableCell>
-                      <StatusBadge status={item.status} />
-                    </TableCell>
-                    <TableCell>
-                      <SentimentBadge sentiment={item.aiSentiment} />
-                    </TableCell>
-                    <TableCell className="text-muted-foreground">
-                      {new Date(item.createdAt).toLocaleDateString('en-US', {
-                        year: 'numeric',
-                        month: 'short',
-                        day: 'numeric',
-                      })}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <Link
-                        to={`/feedback/${item._id}`}
-                        className={cn(buttonVariants({ variant: 'outline', size: 'sm' }))}
-                      >
-                        View
-                      </Link>
-                    </TableCell>
-                  </TableRow>
-                ))}
+                {sorted.map((item) => {
+                  const isSelected = selected.includes(item._id)
+                  return (
+                    <TableRow
+                      key={item._id}
+                      className={cn('h-14', isSelected && 'bg-primary/5')}
+                    >
+                      <TableCell className="w-11 pl-4 pr-0">
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          disabled={busy}
+                          onChange={() => toggleSelected(item._id)}
+                          aria-label={`Select feedback: ${item.comment}`}
+                          className="size-4 cursor-pointer rounded border-border accent-primary focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background focus-visible:outline-none"
+                        />
+                      </TableCell>
+                      <TableCell className="px-3">
+                        <Link
+                          to={`/feedback/${item._id}`}
+                          className="group/comment inline-flex w-full items-start gap-1.5 rounded-sm focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+                        >
+                          <span className="line-clamp-2 decoration-border underline-offset-4 group-hover/comment:underline">
+                            {item.comment}
+                          </span>
+                          <ArrowUpRight className="mt-0.5 size-3.5 shrink-0 text-muted-foreground/50 transition-colors group-hover/comment:text-primary" />
+                        </Link>
+                      </TableCell>
+                      <TableCell className="hidden px-3 md:table-cell">
+                        {item.userId?.name || 'Unknown'}
+                      </TableCell>
+                      <TableCell className="hidden px-3 md:table-cell">
+                        <Badge
+                          variant="secondary"
+                          className="border-transparent bg-accent text-accent-foreground"
+                        >
+                          {item.categoryId?.name || 'General'}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="px-3">
+                        <RatingStars value={item.rating} readOnly size="xs" />
+                      </TableCell>
+                      <TableCell className="px-3">
+                        <StatusBadge status={item.status} />
+                      </TableCell>
+                      <TableCell className="hidden px-3 lg:table-cell">
+                        {item.aiSentiment ? (
+                          <SentimentBadge sentiment={item.aiSentiment} />
+                        ) : (
+                          <span className="text-foreground/80">—</span>
+                        )}
+                      </TableCell>
+                      <TableCell className="hidden px-3 text-foreground/80 sm:table-cell">
+                        {formatDate(item.createdAt)}
+                      </TableCell>
+                      <TableCell className="px-3 text-right">
+                        <Link
+                          to={`/feedback/${item._id}`}
+                          className={cn(
+                            buttonVariants({ variant: 'outline', size: 'sm' }),
+                            'gap-1',
+                          )}
+                        >
+                          <Eye className="size-3.5" />
+                          View
+                        </Link>
+                      </TableCell>
+                    </TableRow>
+                  )
+                })}
               </TableBody>
-            </Table>
+              </Table>
+            </div>
           </CardContent>
         </Card>
       )}

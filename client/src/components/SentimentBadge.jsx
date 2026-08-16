@@ -5,18 +5,18 @@ const SENTIMENT = {
   positive: {
     label: 'Positive',
     className:
-      'border-transparent bg-emerald-500/10 text-emerald-600 dark:bg-emerald-400/15 dark:text-emerald-300',
+      'border-transparent bg-emerald-500/10 text-emerald-700 dark:bg-emerald-400/15 dark:text-emerald-300',
     Icon: ThumbsUp,
   },
   negative: {
     label: 'Negative',
     className:
-      'border-transparent bg-red-500/10 text-red-600 dark:bg-red-400/15 dark:text-red-300',
+      'border-transparent bg-red-500/10 text-red-700 dark:bg-red-400/15 dark:text-red-300',
     Icon: ThumbsDown,
   },
   neutral: {
     label: 'Neutral',
-    className: 'border-transparent bg-muted text-muted-foreground',
+    className: 'border-transparent bg-muted text-foreground/80',
     Icon: Minus,
   },
 }
