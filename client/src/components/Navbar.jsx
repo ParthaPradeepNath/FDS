@@ -79,7 +79,7 @@ export default function Navbar() {
                   'h-9 gap-2 px-1.5 outline-none data-open:bg-muted',
                 )}
               >
-                <Avatar size="sm">
+                <Avatar size="sm" className="ring-ring ring-2">
                   <AvatarFallback className="bg-primary/10 font-semibold text-primary">
                     {user.name.charAt(0).toUpperCase()}
                   </AvatarFallback>
