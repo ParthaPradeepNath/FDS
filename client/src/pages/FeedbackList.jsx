@@ -5,6 +5,7 @@ import api, { bulkUpdateFeedbackStatus } from '../api/client'
 import RatingStars from '../components/RatingStars'
 import StatusBadge from '../components/StatusBadge'
 import SentimentBadge from '../components/SentimentBadge'
+import FeedbackBoard from '../components/FeedbackBoard'
 import { Button, buttonVariants } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent } from '@/components/ui/card'
@@ -36,6 +37,8 @@ import {
   Eye,
   Search,
   SearchX,
+  SquareKanban,
+  Table2,
   X,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -107,6 +110,9 @@ export default function FeedbackList() {
   const [busy, setBusy] = useState(false)
   const [reload, setReload] = useState(0)
 
+  const [view, setView] = useState('table')
+  const [dataVersion, setDataVersion] = useState(0)
+
   const selectAllRef = useRef(null)
 
   const loading = feedback === null && !error
@@ -136,7 +142,10 @@ export default function FeedbackList() {
     api
       .get('/feedback', { params })
       .then(({ data }) => {
-        if (active) setFeedback(data.feedback)
+        if (active) {
+          setFeedback(data.feedback)
+          setDataVersion((v) => v + 1)
+        }
       })
       .catch((err) => {
         if (active) setError(err.response?.data?.message || 'Failed to load feedback')
@@ -172,6 +181,8 @@ export default function FeedbackList() {
     setSelected([])
     setReload((r) => r + 1)
   }
+
+  const softRefetch = () => setReload((r) => r + 1)
 
   const handleReset = () => {
     beginRefetch()
@@ -245,11 +256,33 @@ export default function FeedbackList() {
 
   return (
     <div>
-      <div className="mb-6">
-        <h1 className="text-2xl font-semibold tracking-tight">All Feedback</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Search, filter, and manage every submission.
-        </p>
+      <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight">All Feedback</h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Search, filter, and manage every submission.
+          </p>
+        </div>
+        <div className="inline-flex items-center gap-1 rounded-lg border border-border bg-muted/50 p-1">
+          <Button
+            size="sm"
+            variant={view === 'table' ? 'default' : 'ghost'}
+            onClick={() => setView('table')}
+            className="gap-1.5"
+          >
+            <Table2 className="size-4" />
+            Table
+          </Button>
+          <Button
+            size="sm"
+            variant={view === 'board' ? 'default' : 'ghost'}
+            onClick={() => setView('board')}
+            className="gap-1.5"
+          >
+            <SquareKanban className="size-4" />
+            Board
+          </Button>
+        </div>
       </div>
 
       {error && (
@@ -382,6 +415,8 @@ export default function FeedbackList() {
             </Button>
           )}
         </div>
+      ) : view === 'board' ? (
+        <FeedbackBoard key={dataVersion} items={sorted} onRefetch={softRefetch} />
       ) : (
         <Card className="shadow-sm">
           <CardContent className="p-0">
