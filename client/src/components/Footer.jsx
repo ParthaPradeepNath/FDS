@@ -99,7 +99,7 @@ export default function Footer() {
             </a>
 
             <a
-              href="https://github.com"
+              href="https://github.com/ParthaPradeepNath/FDS"
               target="_blank"
               rel="noopener noreferrer"
               aria-label="GitHub"
