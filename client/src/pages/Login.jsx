@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
+import { motion } from 'motion/react'
 import { useAuth } from '../context/useAuth.js'
 import { Button } from '@/components/ui/stateful-button'
 import {
@@ -15,6 +16,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { AlertCircle, ShieldCheck, User } from 'lucide-react'
 import Logo from '../components/Logo'
+import { tabSwitch } from '@/lib/motion'
 
 const ROLE_ITEMS = [
   { value: 'user', label: 'User' },
@@ -108,7 +110,13 @@ export default function Login() {
               )}
 
               <TabsContent value="login" className="m-0">
-                <form onSubmit={handleLogin} className="flex flex-col gap-4">
+                <motion.div
+                  variants={tabSwitch}
+                  initial="initial"
+                  animate="animate"
+                  className="will-change-transform"
+                >
+                  <form onSubmit={handleLogin} className="flex flex-col gap-4">
                   <div className="flex flex-col gap-1.5">
                     <Label htmlFor="email">Email</Label>
                     <Input
@@ -144,11 +152,18 @@ export default function Login() {
                   >
                     Login
                   </Button>
-                </form>
+                  </form>
+                </motion.div>
               </TabsContent>
 
               <TabsContent value="register" className="m-0">
-                <form onSubmit={handleRegister} className="flex flex-col gap-4">
+                <motion.div
+                  variants={tabSwitch}
+                  initial="initial"
+                  animate="animate"
+                  className="will-change-transform"
+                >
+                  <form onSubmit={handleRegister} className="flex flex-col gap-4">
                   <div className="flex flex-col gap-1.5">
                     <Label htmlFor="name">Full name</Label>
                     <Input
@@ -225,7 +240,8 @@ export default function Login() {
                   >
                     Create account
                   </Button>
-                </form>
+                  </form>
+                </motion.div>
               </TabsContent>
             </CardContent>
           </Card>

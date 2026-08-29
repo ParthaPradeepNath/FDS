@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, useDeferredValue } from 'react'
 import { Link } from 'react-router-dom'
 import { toast } from 'sonner'
+import { motion, AnimatePresence } from 'motion/react'
 import api, { bulkUpdateFeedbackStatus } from '../api/client'
 import RatingStars from '../components/RatingStars'
 import StatusBadge from '../components/StatusBadge'
@@ -43,6 +44,7 @@ import {
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { STATUS_OPTIONS } from '@/lib/constants'
+import { tabSwitch } from '@/lib/motion'
 
 const ALL_OPTIONS = {
   category: 'all-categories',
@@ -415,12 +417,22 @@ export default function FeedbackList() {
             </Button>
           )}
         </div>
-      ) : view === 'board' ? (
-        <FeedbackBoard key={dataVersion} items={sorted} onRefetch={softRefetch} />
       ) : (
-        <Card className="shadow-sm">
-          <CardContent className="p-0">
-            {selected.length > 0 && (
+        <AnimatePresence mode="wait" initial={false}>
+          <motion.div
+            key={view}
+            variants={tabSwitch}
+            initial="initial"
+            animate="animate"
+            exit="exit"
+            className="will-change-transform"
+          >
+            {view === 'board' ? (
+              <FeedbackBoard key={dataVersion} items={sorted} onRefetch={softRefetch} />
+            ) : (
+              <Card className="shadow-sm">
+                <CardContent className="p-0">
+                  {selected.length > 0 && (
               <div
                 data-bulk-bar
                 className="flex flex-wrap items-center gap-2 border-b border-border bg-muted/50 px-4 py-2"
@@ -589,6 +601,9 @@ export default function FeedbackList() {
             </div>
           </CardContent>
         </Card>
+            )}
+          </motion.div>
+        </AnimatePresence>
       )}
     </div>
   )

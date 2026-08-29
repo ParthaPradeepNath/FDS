@@ -12,3 +12,17 @@ export const fadeUp = {
     transition: { duration: 0.6, ease: 'easeOut' },
   },
 }
+
+export const tabSwitch = {
+  initial: { opacity: 0, y: 12 },
+  animate: {
+    opacity: 1,
+    y: 0,
+    transition: { duration: 0.3, ease: 'easeOut' },
+  },
+  exit: {
+    opacity: 0,
+    y: -8,
+    transition: { duration: 0.18, ease: 'easeIn' },
+  },
+}
